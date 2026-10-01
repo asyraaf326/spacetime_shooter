@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Machine Learning & Space Defender</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0d0e15;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.3);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        canvas {
+            background: radial-gradient(circle at center, #1a1c29 0%, #08090d 100%);
+            display: block;
+        }
+
+        /* Modal Kuiz UI */
+        #quiz-modal {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 10, 18, 0.92);
+            backdrop-filter: blur(5px);
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+
+        .quiz-box {
+            background: #181b2a;
+            border: 2px solid #00ffcc;
+            border-radius: 12px;
+            padding: 25px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.4);
+            text-align: center;
+        }
+
+        .quiz-box h3 {
+            color: #00ffcc;
+            margin-top: 0;
+        }
+
+        .quiz-box p {
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+            line-height: 1.4;
+        }
+
+        .btn-option {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            background: #252a40;
+            color: #fff;
+            border: 1px solid #3d466e;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+            text-align: left;
+        }
+
+        .btn-option:hover {
+            background: #00ffcc;
+            color: #000;
+            font-weight: bold;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            font-size: 1.1rem;
+            font-weight: bold;
+            text-shadow: 0 0 5px #000;
+        }
+
+        .laser-status {
+            color: #00ffff;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <div id="ui-layer">
+        <div>Mata: <span id="score">0</span></div>
+        <div class="laser-status" id="laser-timer">Laser Cooldown: Kuiz Diperlukan</div>
+    </div>
+
+    <!-- Modal Quiz -->
+    <div id="quiz-modal">
+        <div class="quiz-box">
+            <h3>Jawab Soalan untuk Mengaktifkan Laser 7-Saat!</h3>
+            <p id="quiz-question">Soalan di sini...</p>
+            <div id="quiz-options"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Data Soalan Kuiz (Setiap Soalan Mempunyai 4 Pilihan Jawapan)
+const quizData = [
+    {
+        question: "What is the meaning of “85% accuracy”?",
+        options: [
+            "The model predicts correctly about 85 out of 100 times",
+            "The dataset has 85 rows",
+            "The model uses 85% data",
+            "The model takes 85 seconds to run"
+        ],
+        correct: 0
+    },
+    {
+        question: "Which of the following is NOT part of model building?",
+        options: [
+            "Feature selection",
+            "Prediction testing",
+            "Data collection",
+            "Hyperparameter tuning"
+        ],
+        correct: 2
+    },
+    {
+        question: "In machine learning, the term “features” refers to:",
+        options: [
+            "Variables or input attributes used to help the model make predictions",
+            "The accuracy percentage achieved after training",
+            "The final prediction produced by the model",
+            "The programming language used to build the algorithm"
+        ],
+        correct: 0
+    }
+];
+
+// Pembolehubah Permainan
+let score = 0;
+let player = { x: 375, y: 520, width: 50, height: 40, speed: 6 };
+let keys = {};
+let bullets = [];
+let meteors = [];
+let particles = [];
+let isQuizActive = false;
+let currentQuizIndex = 0;
+
+// Sistem Laser (7 Saat Continuous)
+let laserActive = false;
+let laserTimer = 0; // dalam saat
+let laserDuration = 7; 
+let laserReady = true;
+
+// Event Listeners Kawalan
+window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (e.key === ' ' && !isQuizActive) {
+        shootBullet();
+    }
+    if ((e.key === 'e' || e.key === 'E') && !isQuizActive) {
+        triggerLaserSkill();
+    }
+});
+window.addEventListener('keyup', e => keys[e.key] = false);
+
+// Tembakan Peluru Biasa
+function shootBullet() {
+    bullets.push({ x: player.x + player.width / 2 - 3, y: player.y, width: 6, height: 15 });
+}
+
+// Mengaktifkan Kemahiran Laser
+function triggerLaserSkill() {
+    if (laserActive) return;
+
+    if (laserReady) {
+        activateLaser();
+    } else {
+        showQuiz();
+    }
+}
+
+function activateLaser() {
+    laserActive = true;
+    laserTimer = laserDuration;
+    laserReady = false;
+
+    let countdown = setInterval(() => {
+        laserTimer -= 0.1;
+        document.getElementById('laser-timer').innerText = `LASER AKTIF: ${Math.max(0, laserTimer).toFixed(1)}s`;
+        if (laserTimer <= 0) {
+            clearInterval(countdown);
+            laserActive = false;
+            document.getElementById('laser-timer').innerText = `Laser Cooldown: Tekan [E] (Perlu Jawab Kuiz)`;
+        }
+    }, 100);
+}
+
+// Tunjuk Paparan Kuiz
+function showQuiz() {
+    isQuizActive = true;
+    document.getElementById('quiz-modal').style.display = 'flex';
+    
+    // Pilih soalan secara berselang-selik
+    const q = quizData[currentQuizIndex];
+    document.getElementById('quiz-question').innerText = q.question;
+    
+    const optionsContainer = document.getElementById('quiz-options');
+    optionsContainer.innerHTML = '';
+
+    q.options.forEach((opt, idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'btn-option';
+        btn.innerText = `${String.fromCharCode(65 + idx)}. ${opt}`;
+        btn.onclick = () => checkAnswer(idx, q.correct);
+        optionsContainer.appendChild(btn);
+    });
+}
+
+function checkAnswer(selected, correct) {
+    if (selected === correct) {
+        alert("Jawapan Betul! Kuasa Laser 7-Saat Ditaktikkan!");
+        currentQuizIndex = (currentQuizIndex + 1) % quizData.length;
+        laserReady = true;
+        document.getElementById('quiz-modal').style.display = 'none';
+        isQuizActive = false;
+        activateLaser();
+    } else {
+        alert("Jawapan Salah! Cuba lagi.");
+    }
+}
+
+// Jana Meteorid Berstruktur (Jagged Polygon & Craters)
+function spawnMeteor() {
+    const size = Math.random() * 25 + 25;
+    
+    // Bintik bucu poligon berlekuk-lekuk (Jagged vertices)
+    const numPoints = 8;
+    const vertices = [];
+    for (let i = 0; i < numPoints; i++) {
+        const angle = (i / numPoints) * Math.PI * 2;
+        const offset = (Math.random() * 0.4 + 0.8); // Kerevolusi lekukan
+        vertices.push({
+            x: Math.cos(angle) * size * offset,
+            y: Math.sin(angle) * size * offset
+        });
+    }
+
+    // Kawah/Retakan Batu
+    const craters = [];
+    for(let i=0; i<3; i++) {
+        craters.push({
+            x: (Math.random() - 0.5) * size * 0.8,
+            y: (Math.random() - 0.5) * size * 0.8,
+            r: Math.random() * (size * 0.2) + 3
+        });
+    }
+
+    meteors.push({
+        x: Math.random() * (canvas.width - size * 2) + size,
+        y: -size,
+        size: size,
+        speed: Math.random() * 1.5 + 1,
+        vertices: vertices,
+        craters: craters,
+        rotation: 0,
+        rotSpeed: (Math.random() - 0.5) * 0.03
+    });
+}
+
+// Gelung Utama Permainan
+function update() {
+    if (isQuizActive) return;
+
+    // Pergerakan Pemain
+    if ((keys['ArrowLeft'] || keys['a'] || keys['A']) && player.x > 0) player.x -= player.speed;
+    if ((keys['ArrowRight'] || keys['d'] || keys['D']) && player.x < canvas.width - player.width) player.x += player.speed;
+
+    // Pergerakan Peluru
+    bullets.forEach((b, index) => {
+        b.y -= 8;
+        if (b.y < 0) bullets.splice(index, 1);
+    });
+
+    // Penjanaan Meteor
+    if (Math.random() < 0.02) spawnMeteor();
+
+    // Pergerakan Meteor & Zarah
+    meteors.forEach((m, mIndex) => {
+        m.y += m.speed;
+        m.rotation += m.rotSpeed;
+
+        // Janakan Zarah Percikan Api & Ekor Komet semasa melintas
+        particles.push({
+            x: m.x + (Math.random() - 0.5) * m.size,
+            y: m.y - m.size * 0.5,
+            vx: (Math.random() - 0.5) * 1,
+            vy: -Math.random() * 3 - 1,
+            size: Math.random() * 4 + 2,
+            life: 1,
+            color: Math.random() > 0.5 ? '#ff4500' : '#ffa500'
+        });
+
+        // Pelanggaran dengan Laser Berterusan ( Continuous Damage )
+        if (laserActive) {
+            let laserX = player.x + player.width / 2;
+            if (Math.abs(m.x - laserX) < m.size + 15) {
+                createExplosion(m.x, m.y);
+                meteors.splice(mIndex, 1);
+                score += 10;
+                return;
+            }
+        }
+
+        // Pelanggaran dengan Peluru Biasa
+        bullets.forEach((b, bIndex) => {
+            let dist = Math.hypot(b.x - m.x, b.y - m.y);
+            if (dist < m.size) {
+                createExplosion(m.x, m.y);
+                meteors.splice(mIndex, 1);
+                bullets.splice(bIndex, 1);
+                score += 10;
+            }
+        });
+
+        // Semak sempadan bawah
+        if (m.y > canvas.height + m.size) {
+            meteors.splice(mIndex, 1);
+        }
+    });
+
+    // Pergerakan Zarah Flame/Spark
+    particles.forEach((p, pIndex) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.03;
+        if (p.life <= 0) particles.splice(pIndex, 1);
+    });
+
+    document.getElementById('score').innerText = score;
+}
+
+function createExplosion(x, y) {
+    for (let i = 0; i < 15; i++) {
+        particles.push({
+            x: x, y: y,
+            vx: (Math.random() - 0.5) * 6,
+            vy: (Math.random() - 0.5) * 6,
+            size: Math.random() * 5 + 2,
+            life: 1,
+            color: '#ffcc00'
+        });
+    }
+}
+
+// Lukis Grafik Permainan
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 1. Lukis Zarah Percikan Api & Ekor Komet
+    particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    });
+
+    // 2. Lukis Pemain (Kapal Angkasa)
+    ctx.fillStyle = '#00ffcc';
+    ctx.beginPath();
+    ctx.moveTo(player.x + player.width / 2, player.y);
+    ctx.lineTo(player.x + player.width, player.y + player.height);
+    ctx.lineTo(player.x, player.y + player.height);
+    ctx.closePath();
+    ctx.fill();
+
+    // 3. Lukis Peluru Biasa
+    ctx.fillStyle = '#ffff00';
+    bullets.forEach(b => {
+        ctx.fillRect(b.x, b.y, b.width, b.height);
+    });
+
+    // 4. Lukis Laser Berterusan ( continuous 7s Laser )
+    if (laserActive) {
+        let lx = player.x + player.width / 2;
+        
+        // Glow Luar
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.4)';
+        ctx.lineWidth = 30;
+        ctx.beginPath();
+        ctx.moveTo(lx, player.y);
+        ctx.lineTo(lx, 0);
+        ctx.stroke();
+
+        // Teras Laser Utama
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 10;
+        ctx.beginPath();
+        ctx.moveTo(lx, player.y);
+        ctx.lineTo(lx, 0);
+        ctx.stroke();
+    }
+
+    // 5. Lukis Meteorid Berstruktur (Craggy Polygon, Craters & Burn Effect)
+    meteors.forEach(m => {
+        ctx.save();
+        ctx.translate(m.x, m.y);
+        ctx.rotate(m.rotation);
+
+        // Kesan Pembakaran Atmosfera (Atmospheric Burn Glow)
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#ff3300';
+
+        // Batuan Berlekuk (Jagged Craggy Polygon)
+        ctx.fillStyle = '#4a4e5d';
+        ctx.strokeStyle = '#2a2d37';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        m.vertices.forEach((v, index) => {
+            if (index === 0) ctx.moveTo(v.x, v.y);
+            else ctx.lineTo(v.x, v.y);
+        });
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Kesan Kawah & Retakan Batu (Craters & Cracks)
+        ctx.shadowBlur = 0; // Tutup shadow untuk dalaman
+        ctx.fillStyle = '#323543';
+        m.craters.forEach(c => {
+            ctx.beginPath();
+            ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        ctx.restore();
+    });
+}
+
+// Gelung Permainan Utama
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
